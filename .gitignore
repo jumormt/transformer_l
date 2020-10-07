@@ -1,0 +1,13 @@
+.vscode/*
+**/__pycache__/**
+data/**
+*.pkl
+.idea/*
+*.pdf
+wandb/*
+lightning_logs/*
+*.model
+*.txt
+MNIST/*
+log/*
+checkpoints/*
