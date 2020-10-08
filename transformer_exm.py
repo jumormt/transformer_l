@@ -83,8 +83,7 @@ class TextIterDataset(IterableDataset):
         self._data = data
         self._seq_len = seq_len
         self._cur_sample_idx = 0
-        self._total_n_samples = len(self._data) // self._seq_len + int(
-            len(self._data) % self._seq_len != 0)
+        self._total_n_samples = len(self._data) // self._seq_len
         import numpy
         self._order = numpy.arange(self._total_n_samples)
         self._order = numpy.random.permutation(self._order)
@@ -124,8 +123,8 @@ class TextIterDataset(IterableDataset):
         :return: ([seq len; 1], [seq len; 1])
         '''
         seq_len = min(self._seq_len, len(self._data) - 1 - i)
-        data = self._data[i:i + seq_len]
-        target = self._data[i + 1:i + 1 + seq_len]
+        data = self._data[i:i + seq_len].squeeze(1)
+        target = self._data[i + 1:i + 1 + seq_len].squeeze(1)
         return data, target
 
     def get_n_samples(self):
@@ -135,12 +134,11 @@ class TextIterDataset(IterableDataset):
 
 class TextDataset(Dataset):
     def __init__(self, data: torch.Tensor, seq_len: int):
-        self._data = data`
+        self._data = data
         self._seq_len = seq_len
 
     def __len__(self):
-        return self._data.size(0) // self._seq_len + int(
-            self._data.size(0) % self._seq_len != 0)
+        return self._data.size(0) // self._seq_len
 
     def __getitem__(self, idx) -> Tuple[torch.Tensor, torch.Tensor]:
         '''
@@ -165,8 +163,7 @@ class TextDataset(Dataset):
         return data, target
 
     def get_n_samples(self):
-        return self._data.size(0) // self._seq_len + int(
-            self._data.size(0) % self._seq_len != 0)
+        return self._data.size(0) // self._seq_len
 
 
 class TextBatch:
