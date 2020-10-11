@@ -1,1 +1,2 @@
-from .transformer_encoder import TransformerModelLightning
+from .transformer_encoder import TransformerModelEncoderLightning
+from .transformer import TransformerModelLightning

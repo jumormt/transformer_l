@@ -9,11 +9,12 @@ from dataset import TextBatch, TextDataset, TextIterDataset
 from torchtext.data.utils import get_tokenizer
 from model.modules import PositionalEncoding
 import torchtext
-from configs import TranformerEncoderConfig
+from configs import TransformerEncoderConfig
+import torch.nn.functional as F
 
 
-class TransformerModelLightning(pl.LightningModule):
-    def __init__(self, config: TranformerEncoderConfig):
+class TransformerModelEncoderLightning(pl.LightningModule):
+    def __init__(self, config: TransformerEncoderConfig):
         super().__init__()
         self.save_hyperparameters()
         TEXT = torchtext.data.Field(tokenize=get_tokenizer(config.data),
@@ -30,12 +31,9 @@ class TransformerModelLightning(pl.LightningModule):
         self.ntoken = len(TEXT.vocab.stoi)
         self.model_type = 'Transformer'
         self.src_mask = None
-        self.pos_encoder = PositionalEncoding(config.ninp,
-                                              config.dropout)
-        encoder_layers = TransformerEncoderLayer(config.ninp,
-                                                 config.nhead,
-                                                 config.nhid,
-                                                 config.dropout)
+        self.pos_encoder = PositionalEncoding(config.ninp, config.dropout)
+        encoder_layers = TransformerEncoderLayer(config.ninp, config.nhead,
+                                                 config.nhid, config.dropout)
         self.transformer_encoder = TransformerEncoder(encoder_layers,
                                                       config.nlayers)
         self.encoder = nn.Embedding(self.ntoken, config.ninp)
@@ -101,20 +99,46 @@ class TransformerModelLightning(pl.LightningModule):
                           collate_fn=TextBatch.collate_wrapper,
                           pin_memory=True)
 
+    def _calculate_loss(self, logits: torch.Tensor,
+                        labels: torch.Tensor) -> torch.Tensor:
+        """Calculate cross entropy with ignoring PAD index
+
+        :param logits: [seq length; batch size; vocab size]
+        :param labels: [seq length; batch size]
+        :return: [1]
+        """
+        batch_size = labels.shape[-1]
+        # [batch size; vocab size; seq length]
+        _logits = logits.permute(1, 2, 0)
+        # [batch size; seq length]
+        _labels = labels.permute(1, 0)
+        # [batch size; seq length]
+        loss = F.cross_entropy(_logits, _labels, reduction="none")
+        # [batch size; seq length]
+        mask = _labels != self.TEXT.vocab.stoi["<pad>"]
+        # [batch size; seq length]
+        loss = loss * mask
+        # [1]
+        loss = loss.sum() / batch_size
+        return loss
+
     # ===== STEP =====
     def training_step(self, batch: TextBatch, idx: int) -> Dict:
         data, targets = batch.X, batch.Y
         logits = self(data)
-        loss = nn.CrossEntropyLoss()(logits.view(-1, self.ntoken),
-                                     targets.view(-1))
+        # loss = nn.CrossEntropyLoss()(logits.view(-1, self.ntoken),
+        #                              targets.view(-1))
+        loss = self._calculate_loss(logits, targets)
         logs = {"ptl/train_loss": loss}
-        return {"loss": loss, "log": logs}
+        progress_bar = {"train/loss": logs["ptl/train_loss"]}
+        return {"loss": loss, "log": logs, "progress_bar": progress_bar}
 
     def validation_step(self, batch: TextBatch, idx: int) -> Dict:
         data, targets = batch.X, batch.Y
         logits = self(data)
-        loss = nn.CrossEntropyLoss()(logits.view(-1, self.ntoken),
-                                     targets.view(-1))
+        # loss = nn.CrossEntropyLoss()(logits.view(-1, self.ntoken),
+        #                              targets.view(-1))
+        loss = self._calculate_loss(logits, targets)
         logs = {"ptl/val_loss": loss}
         return {"val_loss": loss, "log": logs}
 
@@ -128,14 +152,20 @@ class TransformerModelLightning(pl.LightningModule):
     def training_epoch_end(self, outputs: List[Dict]) -> Dict:
         avg_loss = torch.stack([x["loss"] for x in outputs]).mean()
         logs = {"ptl/train_loss": avg_loss}
+        progress_bar = {"train/loss": logs["ptl/train_loss"]}
 
-        return {"loss": avg_loss, "log": logs}
+        return {"loss": avg_loss, "log": logs, "progress_bar": progress_bar}
 
     def validation_epoch_end(self, outputs: List[Dict]) -> Dict:
         avg_loss = torch.stack([x["val_loss"] for x in outputs]).mean()
-        logs = {"ptl/val_loss": avg_loss}
+        logs = {"val_loss": avg_loss}
+        progress_bar = {"val/loss": logs["val_loss"]}
 
-        return {"val_loss": avg_loss, "log": logs}
+        return {
+            "val_loss": avg_loss,
+            "log": logs,
+            "progress_bar": progress_bar
+        }
 
     def test_epoch_end(self, outputs: List[Dict]) -> Dict:
         avg_loss = torch.stack([x["test_loss"] for x in outputs]).mean()

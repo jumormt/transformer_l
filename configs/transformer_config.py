@@ -2,8 +2,9 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
-class TransformerEncoderConfig:
-    data: str
+class TransformerConfig:
+    srcdata: str
+    tgtdata: str
     ninp: int
     nhead: int
     nhid: int
