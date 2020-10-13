@@ -219,18 +219,21 @@ class TransformerModelLightning(pl.LightningModule):
         # src_mask = (src != self.EN_TEXT.vocab.stoi["<pad>"])
         # src_mask = src_mask.float().masked_fill(src_mask == 0, float('-inf')).masked_fill(
         #     src_mask == 1, float(0.0)).to(src.device)
-        if self.src_mask is None or self.src_mask.size(0) != src.size(0):
-            self.src_mask = self._generate_square_subsequent_mask(
-                src.size(0)).to(src.device)
+        # if self.src_mask is None or self.src_mask.size(0) != src.size(0):
+        #     self.src_mask = self._generate_square_subsequent_mask(
+        #         src.size(0)).to(src.device)
 
         # [seq len; batch size; embdding size]
         src = self.encoder_embed(src) * math.sqrt(self.ninp)
         src = self.pos_encoder(src)
         # [seq len; batch size; hidden]
-        memory = self.transformer_encoder(src, self.src_mask)
+        memory = self.transformer_encoder(src)
 
+        if self.tgt_mask is None or self.tgt_mask.size(0) != src.size(0):
+            self.tgt_mask = self._generate_square_subsequent_mask(
+                src.size(0)).to(src.device)
         # [seq len; batch size; hidden]
-        decoder_output = self.transformer_decoder(src, memory, self.src_mask)
+        decoder_output = self.transformer_decoder(src, memory, self.tgt_mask)
 
         # [seq len; batch size; fr vovab len]
         outputs = self.out(decoder_output)
