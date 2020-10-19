@@ -51,8 +51,9 @@ def evaluate(checkpoint: str):
                                 lower=True)
     train_txt, val_txt, test_txt = torchtext.datasets.WikiText2.splits(TEXT)
     TEXT.build_vocab(train_txt)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = TransformerModelLightning.load_from_checkpoint(
-        checkpoint_path=checkpoint)
+        checkpoint_path=checkpoint).to(device)
     data = TEXT.numericalize([test_txt.examples[0].text])
     seq_num = data.size(0) // 35
     data = data.narrow(0, 0, seq_num * 35 + 1)
@@ -61,8 +62,14 @@ def evaluate(checkpoint: str):
                             collate_fn=TextBatch.collate_wrapper,
                             pin_memory=True)
     gpu = 1 if torch.cuda.is_available() else None
-    trainer = pl.Trainer(gpus=gpu)
-    trainer.test(model, test_dataloaders=[dataloader])
+
+    # trainer = pl.Trainer(gpus=gpu)
+    # trainer.test(model, test_dataloaders=[dataloader])
+    model.eval()
+    for batch in dataloader:
+        X, Y = batch.X.to(device), batch.Y.to(device)
+        res = model.translate(X)
+        print(res)
 
 
 if __name__ == "__main__":

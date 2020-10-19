@@ -277,6 +277,58 @@ class TransformerModelLightning(pl.LightningModule):
 
         return outputs
 
+    def translate(self, src: torch.Tensor) -> torch.Tensor:
+        '''
+        translate src to tgt
+
+        :param src: [seq len; batch size]
+        :return: [batch size; out seq len]
+        '''
+        batch_size = src.size(1)
+
+        # [seq len; batch size; embdding size]
+        src = self.encoder_embed(src) * math.sqrt(self.ninp)
+        src = self.pos_encoder(src)
+        # [seq len; batch size; hidden]
+        memory = self.transformer_encoder(src)
+
+        if self.tgt_mask is None or self.tgt_mask.size(0) != src.size(0):
+            self.tgt_mask = self._generate_square_subsequent_mask(
+                src.size(0)).to(src.device)
+
+        # [out seq len; batch size]
+        outputs_tmp = src.new_zeros((40, batch_size), dtype=torch.long)
+        # [out seq len; batch size; fr vocab size]
+        outputs = src.new_zeros((40, batch_size, self.frvocab_l))
+        # [1; batch size]
+        cur = src.new_full((1, batch_size),
+                           self.FR_TEXT.vocab.stoi['<sos>'],
+                           dtype=torch.long)
+        for step in range(40):
+            # [step + 1; batch size]
+            decoder_output = self.decoder_step(cur, memory)
+            # [batch size]
+            outputs_tmp[step] = decoder_output[-1].argmax(-1)
+            # [batch size; fr vocab len]
+            outputs[step] = decoder_output[-1]
+            # [step + 2; batch size]
+            cur = outputs_tmp[:step + 1]
+
+        # [batch size; out seq len; fr vocab size]
+        outputs = outputs.permute(1, 0, 2)
+
+        with torch.no_grad():
+
+            # [batch size; out seq len]
+            outidx = outputs.argmax(dim=2)
+            # [batch size; out seq len]
+            res = [[self.EN_TEXT.vocab.itos[w.item()] for w in sen] for sen in outidx]
+
+
+
+
+        return res
+
     def decoder_lstm_step(
             self,
             current_input: torch.Tensor,
