@@ -112,8 +112,8 @@ class TransformerModelLightning(pl.LightningModule):
         # loss = nn.CrossEntropyLoss()(logits.view(-1, self.ntoken),
         #                              targets.view(-1))
         loss = self._calculate_loss(logits, targets)
-        logs = {"ptl/train_loss": loss}
-        self.log_dict(logs)
+        logs = {"train_loss": loss}
+        self.log_dict(logs, prog_bar=True)
         return {"loss": loss}
 
     def validation_step(self, batch: TextBatch, idx: int) -> Dict:
@@ -122,43 +122,34 @@ class TransformerModelLightning(pl.LightningModule):
         # loss = nn.CrossEntropyLoss()(logits.view(-1, self.ntoken),
         #                              targets.view(-1))
         loss = self._calculate_loss(logits, targets)
-        logs = {"ptl/val_loss": loss}
-        self.log_dict(logs)
-        return {"val_loss": loss}
+        # logs = {"ptl/val_loss": loss}
+        # self.log_dict(logs)
+        return {"loss": loss}
 
     def test_step(self, batch: TextBatch, batch_idx: int) -> Dict:
         result = self.validation_step(batch, batch_idx)
-        result["test_loss"] = result["val_loss"]
-        del result["val_loss"]
+        result["loss"] = result["loss"]
+        # del result["loss"]
         return result
 
     # ===== ON EPOCH END =====
     def training_epoch_end(self, outputs: List[Dict]) -> Dict:
         avg_loss = torch.stack([x["loss"] for x in outputs]).mean()
-        logs = {"ptl/train_loss": avg_loss}
-        # progress_bar = {"train/loss": avg_loss}
-        self.log_dict(logs)
+        logs = {"train/loss": avg_loss}
 
-        # return {"loss": avg_loss, "log": logs, "progress_bar": progress_bar}
+        self.log_dict(logs, prog_bar=True)
 
     def validation_epoch_end(self, outputs: List[Dict]) -> Dict:
-        avg_loss = torch.stack([x["val_loss"] for x in outputs]).mean()
-        logs = {"val_loss": avg_loss}
-        # progress_bar = {"val/loss": avg_loss}
+        avg_loss = torch.stack([x["loss"] for x in outputs]).mean()
+        logs = {"val/loss": avg_loss}
 
-        # return {
-        #     "val_loss": avg_loss,
-        #     "log": logs,
-        #     "progress_bar": progress_bar
-        # }
-        self.log_dict(logs)
+        self.log_dict(logs, prog_bar=True)
 
     def test_epoch_end(self, outputs: List[Dict]) -> Dict:
-        avg_loss = torch.stack([x["test_loss"] for x in outputs]).mean()
-        logs = {"ptl/test_loss": avg_loss}
+        avg_loss = torch.stack([x["loss"] for x in outputs]).mean()
+        logs = {"test/loss": avg_loss}
 
-        # return {"test_loss": avg_loss, "log": logs}
-        self.log_dict(logs)
+        self.log_dict(logs, prog_bar=True)
 
     def _calculate_loss(self, logits: torch.Tensor,
                         labels: torch.Tensor) -> torch.Tensor:

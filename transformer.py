@@ -22,7 +22,7 @@ def train():
     tensorlogger = TensorBoardLogger("ts_logger", "transformer")
     # define early stopping callback
     early_stopping_callback = EarlyStopping(patience=3,
-                                            monitor="val_loss",
+                                            monitor="val/loss",
                                             verbose=True,
                                             mode="min")
     # define model checkpoint callback
@@ -30,7 +30,7 @@ def train():
         filepath=join(tensorlogger.log_dir, "{epoch:02d}-{val_loss:.4f}"),
         period=1,
     )
-    trainer = pl.Trainer(max_epochs=10,
+    trainer = pl.Trainer(max_epochs=3,
                          gpus=gpu,
                          gradient_clip_val=0.5,
                          log_every_n_steps=200,
