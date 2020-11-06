@@ -17,7 +17,7 @@ class TransformerModelLightning(pl.LightningModule):
     def __init__(self, config: TransformerConfig):
         super().__init__()
         self.save_hyperparameters()
-        self.config = config
+        self._config = config
         self._init_text(config.srcdata, config.tgtdata)
         self.ninp = config.ninp
         self.model_type = 'Transformer'
@@ -25,8 +25,11 @@ class TransformerModelLightning(pl.LightningModule):
         self._init_decoder()
         self.norm = nn.LayerNorm(config.ninp)
         self.out = nn.Linear(config.ninp, self.frvocab_l, bias=False)
-
         self._init_weights()
+
+    @property
+    def config(self) -> TransformerConfig:
+        return self._config
 
     def _init_text(self, srcdata: str, tgtdata: str):
         self.EN_TEXT = torchtext.data.Field(tokenize=get_tokenizer(srcdata),
@@ -49,37 +52,37 @@ class TransformerModelLightning(pl.LightningModule):
 
     def _init_encoder(self):
         self.src_mask = None
-        self.encoder_embed = nn.Embedding(self.envocab_l, self.config.ninp)
-        self.pos_encoder = PositionalEncoding(self.config.ninp,
-                                              self.config.dropout)
-        encoder_layers = TransformerEncoderLayer(self.config.ninp,
-                                                 self.config.nhead,
-                                                 self.config.nhid,
-                                                 self.config.dropout)
+        self.encoder_embed = nn.Embedding(self.envocab_l, self._config.ninp)
+        self.pos_encoder = PositionalEncoding(self._config.ninp,
+                                              self._config.dropout)
+        encoder_layers = TransformerEncoderLayer(self._config.ninp,
+                                                 self._config.nhead,
+                                                 self._config.nhid,
+                                                 self._config.dropout)
         self.transformer_encoder = TransformerEncoder(encoder_layers,
-                                                      self.config.nlayers)
+                                                      self._config.nlayers)
 
     def _init_decoder(self):
         self.tgt_mask = None
-        self.decoder_embed = nn.Embedding(self.frvocab_l, self.config.ninp)
-        self.pos_decoder = PositionalEncoding(self.config.ninp,
-                                              self.config.dropout)
-        decoder_layers = TransformerDecoderLayer(self.config.ninp,
-                                                 self.config.nhead,
-                                                 self.config.nhid,
-                                                 self.config.dropout)
+        self.decoder_embed = nn.Embedding(self.frvocab_l, self._config.ninp)
+        self.pos_decoder = PositionalEncoding(self._config.ninp,
+                                              self._config.dropout)
+        decoder_layers = TransformerDecoderLayer(self._config.ninp,
+                                                 self._config.nhead,
+                                                 self._config.nhid,
+                                                 self._config.dropout)
         self.transformer_decoder = TransformerDecoder(decoder_layers,
-                                                      self.config.nlayers)
+                                                      self._config.nlayers)
         self.decoder_lstm = nn.LSTM(
-            self.config.ninp,
-            self.config.nhid,
+            self._config.ninp,
+            self._config.nhid,
             num_layers=1,
             batch_first=True,
         )
-        self.dropout_rnn = nn.Dropout(self.config.dropout)
-        self.attention = LuongAttention(self.config.nhid)
-        self.concat_layer = nn.Linear(self.config.nhid * 2,
-                                      self.config.nhid,
+        self.dropout_rnn = nn.Dropout(self._config.dropout)
+        self.attention = LuongAttention(self._config.nhid)
+        self.concat_layer = nn.Linear(self._config.nhid * 2,
+                                      self._config.nhid,
                                       bias=False)
 
     def _generate_square_subsequent_mask(self, sz):
@@ -102,38 +105,6 @@ class TransformerModelLightning(pl.LightningModule):
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1.0, gamma=0.95)
         return [optimizer], [scheduler]
 
-    # ===== PREPARE DATA =====
-    def _narrow_doc(self, txt, bptt):
-        data = self.EN_TEXT.numericalize([txt.examples[0].text])
-        seq_num = data.size(0) // bptt
-        data = data.narrow(0, 0, seq_num * bptt + 1)
-        return data
-
-    def prepare_data(self):
-        # [total token]
-        self.train_data = self._narrow_doc(self.en_train_txt, 35)
-        self.test_data = self._narrow_doc(self.en_test_txt, 35)
-        self.val_data = self._narrow_doc(self.en_val_txt, 35)
-
-    # ===== DATALOADERS BLOCK =====
-    def train_dataloader(self):
-        return DataLoader(TextIterDataset(self.train_data, 35, True),
-                          batch_size=20,
-                          collate_fn=TextBatch.collate_wrapper,
-                          pin_memory=True)
-
-    def val_dataloader(self):
-        return DataLoader(TextIterDataset(self.val_data, 35),
-                          batch_size=10,
-                          collate_fn=TextBatch.collate_wrapper,
-                          pin_memory=True)
-
-    def test_dataloader(self):
-        return DataLoader(TextIterDataset(self.test_data, 35),
-                          batch_size=10,
-                          collate_fn=TextBatch.collate_wrapper,
-                          pin_memory=True)
-
     # ===== STEP =====
     def training_step(self, batch: TextBatch, idx: int) -> Dict:
         data, targets = batch.X, batch.Y
@@ -142,8 +113,8 @@ class TransformerModelLightning(pl.LightningModule):
         #                              targets.view(-1))
         loss = self._calculate_loss(logits, targets)
         logs = {"ptl/train_loss": loss}
-        progress_bar = {"train/loss": loss}
-        return {"loss": loss, "log": logs, "progress_bar": progress_bar}
+        self.log_dict(logs)
+        return {"loss": loss}
 
     def validation_step(self, batch: TextBatch, idx: int) -> Dict:
         data, targets = batch.X, batch.Y
@@ -152,7 +123,8 @@ class TransformerModelLightning(pl.LightningModule):
         #                              targets.view(-1))
         loss = self._calculate_loss(logits, targets)
         logs = {"ptl/val_loss": loss}
-        return {"val_loss": loss, "log": logs}
+        self.log_dict(logs)
+        return {"val_loss": loss}
 
     def test_step(self, batch: TextBatch, batch_idx: int) -> Dict:
         result = self.validation_step(batch, batch_idx)
@@ -164,26 +136,29 @@ class TransformerModelLightning(pl.LightningModule):
     def training_epoch_end(self, outputs: List[Dict]) -> Dict:
         avg_loss = torch.stack([x["loss"] for x in outputs]).mean()
         logs = {"ptl/train_loss": avg_loss}
-        progress_bar = {"train/loss": avg_loss}
+        # progress_bar = {"train/loss": avg_loss}
+        self.log_dict(logs)
 
-        return {"loss": avg_loss, "log": logs, "progress_bar": progress_bar}
+        # return {"loss": avg_loss, "log": logs, "progress_bar": progress_bar}
 
     def validation_epoch_end(self, outputs: List[Dict]) -> Dict:
         avg_loss = torch.stack([x["val_loss"] for x in outputs]).mean()
         logs = {"val_loss": avg_loss}
-        progress_bar = {"val/loss": avg_loss}
+        # progress_bar = {"val/loss": avg_loss}
 
-        return {
-            "val_loss": avg_loss,
-            "log": logs,
-            "progress_bar": progress_bar
-        }
+        # return {
+        #     "val_loss": avg_loss,
+        #     "log": logs,
+        #     "progress_bar": progress_bar
+        # }
+        self.log_dict(logs)
 
     def test_epoch_end(self, outputs: List[Dict]) -> Dict:
         avg_loss = torch.stack([x["test_loss"] for x in outputs]).mean()
         logs = {"ptl/test_loss": avg_loss}
 
-        return {"test_loss": avg_loss, "log": logs}
+        # return {"test_loss": avg_loss, "log": logs}
+        self.log_dict(logs)
 
     def _calculate_loss(self, logits: torch.Tensor,
                         labels: torch.Tensor) -> torch.Tensor:
@@ -322,10 +297,8 @@ class TransformerModelLightning(pl.LightningModule):
             # [batch size; out seq len]
             outidx = outputs.argmax(dim=2)
             # [batch size; out seq len]
-            res = [[self.EN_TEXT.vocab.itos[w.item()] for w in sen] for sen in outidx]
-
-
-
+            res = [[self.EN_TEXT.vocab.itos[w.item()] for w in sen]
+                   for sen in outidx]
 
         return res
 
@@ -385,10 +358,3 @@ class TransformerModelLightning(pl.LightningModule):
         decoder_output = self.out(decoder_output)
 
         return decoder_output
-
-    def transfer_batch_to_device(self, batch: TextBatch,
-                                 device: torch.device) -> TextBatch:
-        # [total word length, input size]
-        batch.X = batch.X.to(device)
-        batch.Y = batch.Y.to(device)
-        return batch
